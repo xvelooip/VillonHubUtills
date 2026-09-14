@@ -6333,7 +6333,7 @@ function NeverLose:CreateWindow(Config)
 		Name = "Shitaro",
 		Content = "Murder Mustery 2",
 		Size = UDim2.new(0, 640, 0, 480),
-		ConfigFolder = "ShitaroCfg",
+		ConfigFolder = "VillonCfg",
 		Enable3DRenderer = false,
 		Keybind = "Insert"
 	});
@@ -8054,6 +8054,19 @@ function NeverLose:CreateWindow(Config)
 		ConfigSignal:Connect(ConfigLib.SetRender);
 		ConfigLib.UnsafeThread = nil;
 		ConfigLib.SelectedConfig = "Default";
+		local ConfigExtension = ".Vln";
+
+		local function ConfigPath(name)
+			return Window.ConfigFolder.."/"..tostring(name)..ConfigExtension;
+		end;
+
+		local function ConfigDisplayName(path)
+			local name = string.sub(path, #Window.ConfigFolder + 2);
+			if string.sub(name, -#ConfigExtension) == ConfigExtension then
+				name = string.sub(name, 1, #name - #ConfigExtension);
+			end;
+			return name;
+		end;
 
 		local UpdateSize = LPH_NO_VIRTUALIZE(function()
 			local size = TextService:GetTextSize(ConfigName.Text , ConfigName.TextSize,ConfigName.Font,Vector2.new(math.huge,math.huge));
@@ -8188,16 +8201,17 @@ function NeverLose:CreateWindow(Config)
 				makefolder(Window.ConfigFolder);
 			end;
 			
-			if not isfile(Window.ConfigFolder..'/Default') then
-				writefile(Window.ConfigFolder..'/Default',ConfigLib:GetData());
+			if not isfile(ConfigPath('Default')) then
+				writefile(ConfigPath('Default'),ConfigLib:GetData());
 			end;
 
 			local ConfigList = {};
 			for i,v in next , listfiles(Window.ConfigFolder) do
 
-				local name = string.sub(v , #Window.ConfigFolder + 2);
-
-				table.insert(ConfigList , name)
+				local rawName = string.sub(v , #Window.ConfigFolder + 2);
+				if string.sub(rawName, -#ConfigExtension) == ConfigExtension then
+					table.insert(ConfigList , ConfigDisplayName(v));
+				end;
 			end;
 
 			table.sort(ConfigList);
@@ -8412,7 +8426,7 @@ function NeverLose:CreateWindow(Config)
 						return;
 					end;
 					
-					delfile(Window.ConfigFolder..'/'..ConfigNameStr);
+					delfile(ConfigPath(ConfigNameStr));
 
 					UpdateSize();
 
@@ -8423,7 +8437,7 @@ function NeverLose:CreateWindow(Config)
 
 
 				local _,load_signal = NeverLose:CreateInput(LoadConfig,function()
-					local path = Window.ConfigFolder..'/'..ConfigNameStr;
+					local path = ConfigPath(ConfigNameStr);
 
 					if isfile(path) then
 						local data = readfile(path);
@@ -8478,7 +8492,7 @@ function NeverLose:CreateWindow(Config)
 		
 		task.delay(1,function()
 			if ConfigLib.SelectedConfig == "Default" then
-				local path = Window.ConfigFolder..'/Default';
+				local path = ConfigPath('Default');
 				local ConfigNameStr = "Default";
 				
 				if isfile(path) then
@@ -8507,7 +8521,7 @@ function NeverLose:CreateWindow(Config)
 
 									task.wait();
 
-									writefile(Window.ConfigFolder..'/Default',fresh);
+									writefile(ConfigPath('Default'),fresh);
 								end;
 							end;
 						end;
@@ -8517,10 +8531,10 @@ function NeverLose:CreateWindow(Config)
 		end);
 
 		local hover_write = NeverLose:CreateInput(ConfigIcon,function()
-			local path = Window.ConfigFolder..'/'..(ConfigLib.SelectedConfig or "Default");
+			local path = ConfigPath(ConfigLib.SelectedConfig or "Default");
 
 			if isfile(path) then
-				writefile(Window.ConfigFolder..'/'..(ConfigLib.SelectedConfig or "Default"),ConfigLib:GetData());
+				writefile(ConfigPath(ConfigLib.SelectedConfig or "Default"),ConfigLib:GetData());
 
 				Logging.new("folder",'Saved '..tostring(ConfigLib.SelectedConfig),3.5)
 			end;
@@ -8545,7 +8559,7 @@ function NeverLose:CreateWindow(Config)
 			if cfg_name and cfg_name:byte() and not cfg_name:find('/',1,true) and not cfg_name:find('\\',1,true) then
 				cfg_name = string.sub(cfg_name , 1 , 24);
 
-				writefile(Window.ConfigFolder..'/'..cfg_name,ConfigLib:GetData());
+				writefile(ConfigPath(cfg_name),ConfigLib:GetData());
 				ConfigLib.SelectedConfig = cfg_name;
 				ConfigName.Text = cfg_name;
 
