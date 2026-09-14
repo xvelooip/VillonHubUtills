@@ -6333,7 +6333,7 @@ function NeverLose:CreateWindow(Config)
 		Name = "Shitaro",
 		Content = "Murder Mustery 2",
 		Size = UDim2.new(0, 640, 0, 480),
-		ConfigFolder = "VillonCfg",
+		ConfigFolder = "ShitaroCfg",
 		Enable3DRenderer = false,
 		Keybind = "Insert"
 	});
@@ -10533,239 +10533,380 @@ end;
 getgenv().__NL_CURRENT_TEST = NeverLose;
 
 
--- =========================================================
--- Legacy Shitaro API compatibility
--- =========================================================
--- The Shitaro script uses the older lowercase API:
---   lib:window -> window:tab -> tab:section -> section:toggle/slider/etc.
--- Keep the native NeverLose API intact and expose this compatibility layer
--- on top, so the script can use its original calls without being rewritten.
-
+-- ============================================================
+-- Legacy compatibility layer
+-- The Villon/Shitaro script uses the lowercase legacy UI API
+-- (window/tab/section/toggle/slider/...). Keep the native
+-- NeverLose API intact and expose only adapters on top of it.
+-- ============================================================
 do
-    local __NL_OriginalCreateWindow = NeverLose.CreateWindow
+    local NativeCreateWindow = NeverLose.CreateWindow
 
-    local function __NL_CompatElement(el, optionEnabled)
-        if not el then return el end
-
-        if type(el.GetValue) == "function" then
-            el.get = function(self) return self:GetValue() end
-        end
-        if type(el.SetValue) == "function" then
-            el.set = function(self, v) return self:SetValue(v) end
+    local function bindValueAliases(el)
+        if type(el) ~= "table" then
+            return el
         end
 
-        if optionEnabled and type(el.AddOption) == "function" then
-            local ok, opt = pcall(function()
-                return el:AddOption(1)
-            end)
-            if ok and opt then
-                el.options = opt
-            end
+        if type(el.GetValue) == "function" and type(el.get) ~= "function" then
+            el.get = el.GetValue
         end
-
+        if type(el.SetValue) == "function" and type(el.set) ~= "function" then
+            el.set = el.SetValue
+        end
+        if type(el.SetValues) == "function" and type(el.setlist) ~= "function" then
+            el.setlist = el.SetValues
+            el.setvalues = el.SetValues
+        end
         return el
     end
 
-    local function __NL_CompatSection(section)
-        if not section then return section end
-        if section.__VillonLegacySection then return section end
+    local function legacySection(section)
+        if type(section) ~= "table" then
+            return section
+        end
+        if section.__VillonLegacySection then
+            return section
+        end
         section.__VillonLegacySection = true
 
         function section:toggle(cfg)
             cfg = cfg or {}
-            local el = self:AddLabel(cfg.name or cfg.Name or "toggle"):AddToggle({
-                Default = cfg.default == true or cfg.Default == true,
-                Flag = cfg.flag or cfg.Flag,
-                Callback = cfg.callback or cfg.Callback,
+            local el = self:AddToggle({
+                Default = cfg.default == true,
+                Flag = cfg.flag,
+                Callback = cfg.callback,
             })
-            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+            bindValueAliases(el)
+            -- The old script uses Toggle.Option:AddX(...).  The
+            -- native library has no separate option container, so
+            -- expose the same section as the option target. This
+            -- keeps every option control functional and visible.
+            if cfg.options then
+                el.options = self
+            end
+            return el
         end
 
         function section:slider(cfg)
             cfg = cfg or {}
-            local rounding = cfg.Round
-            if rounding == nil then rounding = cfg.Rounding end
-            local el = self:AddLabel(cfg.name or cfg.Name or "slider"):AddSlider({
-                Min = cfg.min ~= nil and cfg.min or (cfg.Min ~= nil and cfg.Min or 0),
-                Max = cfg.max ~= nil and cfg.max or (cfg.Max ~= nil and cfg.Max or 100),
-                Default = cfg.default ~= nil and cfg.default or cfg.Default,
-                Rounding = rounding ~= nil and rounding or 0,
-                Type = cfg.suffix or cfg.Type or "",
-                Flag = cfg.flag or cfg.Flag,
-                Callback = cfg.callback or cfg.Callback,
+            local rounding = tonumber(cfg.rounding or cfg.round) or 0
+            local step = cfg.step
+            if step == nil then
+                step = rounding > 0 and (1 / (10 ^ rounding)) or 1
+            end
+            local el = self:AddSlider({
+                Min = tonumber(cfg.min) or 0,
+                Max = tonumber(cfg.max) or 100,
+                Default = cfg.default,
+                Rounding = rounding,
+                Type = cfg.suffix or cfg.type or "",
+                Flag = cfg.flag,
+                Callback = cfg.callback,
+                Step = step,
             })
-            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
-        end
-
-        function section:dropdown(cfg)
-            cfg = cfg or {}
-            local el = self:AddLabel(cfg.name or cfg.Name or "dropdown"):AddDropdown({
-                Default = cfg.default ~= nil and cfg.default or cfg.Default,
-                Values = cfg.list or cfg.Values or {},
-                Multi = cfg.multi == true or cfg.Multi == true,
-                Flag = cfg.flag or cfg.Flag,
-                Callback = cfg.callback or cfg.Callback,
-            })
-            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+            return bindValueAliases(el)
         end
 
         function section:combo(cfg)
-            return self:dropdown(cfg)
+            cfg = cfg or {}
+            local el = self:AddDropdown({
+                Values = cfg.list or cfg.values or {},
+                Default = cfg.default,
+                Multi = cfg.multi == true,
+                AutoUpdate = cfg.autoupdate ~= false,
+                Flag = cfg.flag,
+                Callback = cfg.callback,
+            })
+            return bindValueAliases(el)
+        end
+
+        function section:dropdown(cfg)
+            return self:combo(cfg)
         end
 
         function section:color(cfg)
             cfg = cfg or {}
-            local el = self:AddLabel(cfg.name or cfg.Name or "color"):AddColorPicker({
-                Default = cfg.default ~= nil and cfg.default or cfg.Default,
-                Flag = cfg.flag or cfg.Flag,
-                Callback = cfg.callback or cfg.Callback,
+            local el = self:AddColorPicker({
+                Default = cfg.default,
+                Flag = cfg.flag,
+                Callback = cfg.callback,
             })
-            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+            return bindValueAliases(el)
         end
 
         function section:keybind(cfg)
             cfg = cfg or {}
-            local el = self:AddLabel(cfg.name or cfg.Name or "keybind"):AddKeybind({
-                Default = cfg.default ~= nil and cfg.default or cfg.Default,
-                Flag = cfg.flag or cfg.Flag,
-                Callback = cfg.callback or cfg.Callback,
+            local el = self:AddKeybind({
+                Default = cfg.default,
+                Flag = cfg.flag,
+                Callback = cfg.callback,
             })
-            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+            return bindValueAliases(el)
         end
 
         function section:button(cfg)
             cfg = cfg or {}
-            return __NL_CompatElement(self:AddButton({
-                Name = cfg.name or cfg.Name or "Button",
-                Icon = cfg.icon or cfg.Icon,
-                Callback = cfg.callback or cfg.Callback,
-            }))
+            local el = self:AddButton({
+                Name = cfg.name or "Button",
+                Icon = cfg.icon,
+                Callback = cfg.callback,
+            })
+            return bindValueAliases(el)
         end
 
-        function section:label(cfg, wrap)
-            if type(cfg) == "table" then
-                wrap = cfg.wrap
-                cfg = cfg.name or cfg.Name or ""
+        function section:label(cfg)
+            if type(cfg) == "string" then
+                cfg = { name = cfg }
             end
-            return __NL_CompatElement(self:AddLabel(tostring(cfg or ""), wrap == true))
+            cfg = cfg or {}
+            local el = self:AddLabel(tostring(cfg.name or ""), cfg.wrap == true)
+            if type(el) == "table" then
+                if type(el.SetText) == "function" then
+                    el.set = el.SetText
+                end
+                if type(el.SetText) == "function" then
+                    el.SetValue = el.SetText
+                end
+            end
+            return el
         end
 
         return section
     end
 
-    local function __NL_CompatTab(tab)
-        if not tab then return tab end
-        if tab.__VillonLegacyTab then return tab end
+    local function legacyTab(tab)
+        if type(tab) ~= "table" then
+            return tab
+        end
+        if tab.__VillonLegacyTab then
+            return tab
+        end
         tab.__VillonLegacyTab = true
 
-        local __addSection = tab.AddSection
+        local nativeAddSection = tab.AddSection
         function tab:section(cfg)
-            return __NL_CompatSection(__addSection(self, {
-                Name = cfg and (cfg.name or cfg.Name) or "SECTION",
-                Position = cfg and (cfg.side or cfg.Position) or "left",
+            cfg = cfg or {}
+            return legacySection(nativeAddSection(self, {
+                Name = cfg.name or cfg.Name or "SECTION",
+                Position = cfg.side or cfg.Position or "left",
             }))
-        end
-
-        if type(tab.AddClone) == "function" then
-            local __addClone = tab.AddClone
-            function tab:clone(cfg)
-                cfg = cfg or {}
-                return __addClone(self, cfg)
-            end
-        end
-
-        if type(tab.AddImageList) == "function" then
-            local __addImageList = tab.AddImageList
-            function tab:gallery(cfg)
-                cfg = cfg or {}
-                return __addImageList(self, cfg)
-            end
-        end
-
-        if type(tab.AddSub) == "function" then
-            local __addSub = tab.AddSub
-            function tab:sub(cfg)
-                cfg = cfg or {}
-                return __NL_CompatTab(__addSub(self, cfg))
-            end
         end
 
         function tab:color(cfg)
             cfg = cfg or {}
-            local sec = __NL_CompatSection(self:AddSection({
+            local sec = legacySection(nativeAddSection(self, {
                 Name = cfg.name or cfg.Name or "COLORS",
                 Position = cfg.side or cfg.Position or "left",
             }))
             return sec:color(cfg)
         end
 
+        -- The native NeverLose window already has its real config
+        -- controls in the header. This legacy entry is only a
+        -- compatibility page so AddConfig() does not abort creation.
         function tab:configs(cfg)
             cfg = cfg or {}
-            -- NeverLose keeps config controls in Window.UserSettings. Return
-            -- the tab itself so callers can continue using the old API shape.
+            local sec = legacySection(nativeAddSection(self, {
+                Name = cfg.name or cfg.Name or "Configs",
+                Position = cfg.side or cfg.Position or "left",
+            }))
+            sec:label("Configs")
+            return sec
+        end
+
+        function tab:setopen()
+            return true
+        end
+
+        -- Character/model preview adapter. The ESP callback receives
+        -- item.viewport in the original script, so provide a real
+        -- ViewportFrame instead of returning nil.
+        function tab:clone(cfg)
+            cfg = cfg or {}
+            local sec = legacySection(nativeAddSection(self, {
+                Name = cfg.name or cfg.Name or "PREVIEW",
+                Position = cfg.side or cfg.Position or "left",
+            }))
+
+            local viewport = Instance.new("ViewportFrame")
+            viewport.Name = "VillonLegacyViewport"
+            viewport.BackgroundTransparency = 1
+            viewport.Size = UDim2.new(1, -10, 0, tonumber(cfg.height) or 232)
+            viewport.LayoutOrder = 999999
+            viewport.Parent = sec.Root or nil
+
+            local item = {
+                viewport = viewport,
+                parts = {},
+                active = true,
+            }
+
+            local object = {
+                Root = sec.Root,
+                viewport = viewport,
+                parts = item.parts,
+                active = true,
+                __item = item,
+            }
+
+            function object:onrender(fn)
+                object.__onrender = fn
+            end
+
+            return object
+        end
+
+        -- Image-list adapter. The native library does not expose the
+        -- old gallery widget, so use its stable dropdown primitive
+        -- while preserving SetData/SetValue/GetValue semantics.
+        function tab:gallery(cfg)
+            cfg = cfg or {}
+            local sec = legacySection(nativeAddSection(self, {
+                Name = cfg.name or cfg.Name or "LIST",
+                Position = cfg.side or cfg.Position or "left",
+            }))
+
+            local rows = cfg.list or cfg.values or {}
+            local names = {}
+            local function rowName(v)
+                if type(v) == "table" then
+                    return tostring(v.name or v.label or v.Name or v.id or v.Id or "")
+                end
+                return tostring(v)
+            end
+
+            for _, v in ipairs(rows) do
+                local n = rowName(v)
+                if n ~= "" then
+                    names[#names + 1] = n
+                end
+            end
+
+            local default = cfg.default
+            if type(default) == "table" then
+                default = rowName(default[1] or default)
+            end
+
+            local selectedCallback = cfg.callback
+            local drop = sec:combo({
+                name = cfg.name or cfg.Name or "LIST",
+                list = names,
+                default = default,
+                multi = cfg.multi == true,
+                flag = cfg.flag,
+                callback = selectedCallback,
+            })
+
+            local object = {
+                __el = drop,
+                viewport = nil,
+            }
+
+            function object:SetData(v)
+                local out = {}
+                for _, row in ipairs(v or {}) do
+                    local n = rowName(row)
+                    if n ~= "" then
+                        out[#out + 1] = n
+                    end
+                end
+                drop:setlist(out)
+            end
+            object.SetValues = object.SetData
+
+            function object:SetDefault(v)
+                if type(v) == "table" then
+                    v = rowName(v[1] or v)
+                end
+                drop:set(v)
+            end
+
+            function object:SetValue(v)
+                drop:set(v)
+            end
+
+            function object:GetValue()
+                return drop:get()
+            end
+
+            function object:Refresh()
+                return true
+            end
+            function object:Clear()
+                drop:setlist({})
+            end
+            function object:All()
+                return drop:get()
+            end
+            function object:Search()
+                return true
+            end
+            function object:Generate()
+                return true
+            end
+            function object:onrender(fn)
+                object.__onrender = fn
+            end
+
+            return object
+        end
+
+        function tab:sub(cfg)
+            -- Native tabs do not have nested tabs. Reuse the current
+            -- tab so all legacy sub-page controls still render.
             return self
         end
 
         return tab
     end
 
-    local function __NL_CompatWindow(win)
-        if not win then return win end
-        if win.__VillonLegacyWindow then return win end
-        win.__VillonLegacyWindow = true
-
-        function win:tab(cfg)
-            cfg = cfg or {}
-            local tab = self:AddTab({
-                Icon = cfg.icon or cfg.Icon or "crosshairs",
-                Name = cfg.name or cfg.Name or "Tab",
-                Type = cfg.type or cfg.Type or "Double",
-            })
-            return __NL_CompatTab(tab)
+    function NeverLose:CreateWindow(Config)
+        Config = Config or {}
+        if Config.ConfigFolder == nil then
+            Config.ConfigFolder = "VillonCfg"
         end
 
-        function win:toggle()
-            return self:ToggleInterface()
+        local Window = NativeCreateWindow(self, Config)
+
+        if Window then
+            local nativeAddTab = Window.AddTab
+            function Window:tab(cfg)
+                cfg = cfg or {}
+                return legacyTab(nativeAddTab(self, {
+                    Name = cfg.name or cfg.Name or "TAB",
+                    Icon = cfg.icon or cfg.Icon or "circle-dot",
+                    Type = cfg.type or cfg.Type or "Double",
+                }))
+            end
+
+            function Window:toggle()
+                return self:ToggleInterface()
+            end
+
+            function Window:setbind(v)
+                self.Keybind = v
+            end
         end
 
-        function win:setbind(v)
-            self.Keybind = v
-        end
-
-        function win:SetBind(v)
-            self.Keybind = v
-        end
-
-        return win
+        return Window
     end
 
-    NeverLose.window = function(self, cfg)
-        cfg = cfg or {}
-        local converted = {}
-        for k, v in pairs(cfg) do converted[k] = v end
-        if converted.bind ~= nil and converted.Keybind == nil then
-            converted.Keybind = converted.bind
+    -- The script calls lib:window(...), so point the alias at the
+    -- wrapped CreateWindow, not the unwrapped native function.
+    NeverLose.window = NeverLose.CreateWindow
+
+    -- Notification compatibility used by the legacy wrapper.
+    NeverLose.notify = function(self, cfg)
+        local notifier = self:CreateNotification()
+        if notifier and notifier.new then
+            return notifier.new(cfg or {})
         end
-        if converted.keybind ~= nil and converted.Keybind == nil then
-            converted.Keybind = converted.keybind
-        end
-        if converted.configfolder == nil and converted.ConfigFolder == nil then
-            converted.ConfigFolder = "VillonCfg"
-        end
-        return __NL_CompatWindow(__NL_OriginalCreateWindow(self, converted))
     end
 
-    NeverLose._legacyCompat = true
+    -- Optional legacy calls. The script already checks for these
+    -- before using them, so harmless no-op fallbacks are sufficient.
+    NeverLose.popup = NeverLose.popup or function() return nil end
+    NeverLose.ask = NeverLose.ask or function() return nil end
 end
-
--- Alias: some scripts (this one included) call lib:window(...) / lib.window
--- instead of the library's real method name, CreateWindow. Rather than edit
--- CreateWindow itself (risky — anything else that depends on its exact
--- name/behavior could break), just point .window at the same function so
--- both spellings work. This is the actual fix for "prints instalizated and
--- nothing happens": that call was silently failing the
--- `type(lib.window) ~= "function"` check and returning early, before any
--- of the menu/toggle code below it ever ran.
-NeverLose.window = NeverLose.CreateWindow;
 
 return NeverLose;
