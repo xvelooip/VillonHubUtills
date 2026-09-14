@@ -10531,4 +10531,15 @@ function NeverLose:Unload()
 end;
 
 getgenv().__NL_CURRENT_TEST = NeverLose;
+
+-- Alias: some scripts (this one included) call lib:window(...) / lib.window
+-- instead of the library's real method name, CreateWindow. Rather than edit
+-- CreateWindow itself (risky — anything else that depends on its exact
+-- name/behavior could break), just point .window at the same function so
+-- both spellings work. This is the actual fix for "prints instalizated and
+-- nothing happens": that call was silently failing the
+-- `type(lib.window) ~= "function"` check and returning early, before any
+-- of the menu/toggle code below it ever ran.
+NeverLose.window = NeverLose.CreateWindow;
+
 return NeverLose;
