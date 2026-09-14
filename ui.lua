@@ -8054,19 +8054,6 @@ function NeverLose:CreateWindow(Config)
 		ConfigSignal:Connect(ConfigLib.SetRender);
 		ConfigLib.UnsafeThread = nil;
 		ConfigLib.SelectedConfig = "Default";
-		local ConfigExtension = ".Vln";
-
-		local function ConfigPath(name)
-			return Window.ConfigFolder.."/"..tostring(name)..ConfigExtension;
-		end;
-
-		local function ConfigDisplayName(path)
-			local name = string.sub(path, #Window.ConfigFolder + 2);
-			if string.sub(name, -#ConfigExtension) == ConfigExtension then
-				name = string.sub(name, 1, #name - #ConfigExtension);
-			end;
-			return name;
-		end;
 
 		local UpdateSize = LPH_NO_VIRTUALIZE(function()
 			local size = TextService:GetTextSize(ConfigName.Text , ConfigName.TextSize,ConfigName.Font,Vector2.new(math.huge,math.huge));
@@ -8201,17 +8188,16 @@ function NeverLose:CreateWindow(Config)
 				makefolder(Window.ConfigFolder);
 			end;
 			
-			if not isfile(ConfigPath('Default')) then
-				writefile(ConfigPath('Default'),ConfigLib:GetData());
+			if not isfile(Window.ConfigFolder..'/Default') then
+				writefile(Window.ConfigFolder..'/Default',ConfigLib:GetData());
 			end;
 
 			local ConfigList = {};
 			for i,v in next , listfiles(Window.ConfigFolder) do
 
-				local rawName = string.sub(v , #Window.ConfigFolder + 2);
-				if string.sub(rawName, -#ConfigExtension) == ConfigExtension then
-					table.insert(ConfigList , ConfigDisplayName(v));
-				end;
+				local name = string.sub(v , #Window.ConfigFolder + 2);
+
+				table.insert(ConfigList , name)
 			end;
 
 			table.sort(ConfigList);
@@ -8426,7 +8412,7 @@ function NeverLose:CreateWindow(Config)
 						return;
 					end;
 					
-					delfile(ConfigPath(ConfigNameStr));
+					delfile(Window.ConfigFolder..'/'..ConfigNameStr);
 
 					UpdateSize();
 
@@ -8437,7 +8423,7 @@ function NeverLose:CreateWindow(Config)
 
 
 				local _,load_signal = NeverLose:CreateInput(LoadConfig,function()
-					local path = ConfigPath(ConfigNameStr);
+					local path = Window.ConfigFolder..'/'..ConfigNameStr;
 
 					if isfile(path) then
 						local data = readfile(path);
@@ -8492,7 +8478,7 @@ function NeverLose:CreateWindow(Config)
 		
 		task.delay(1,function()
 			if ConfigLib.SelectedConfig == "Default" then
-				local path = ConfigPath('Default');
+				local path = Window.ConfigFolder..'/Default';
 				local ConfigNameStr = "Default";
 				
 				if isfile(path) then
@@ -8521,7 +8507,7 @@ function NeverLose:CreateWindow(Config)
 
 									task.wait();
 
-									writefile(ConfigPath('Default'),fresh);
+									writefile(Window.ConfigFolder..'/Default',fresh);
 								end;
 							end;
 						end;
@@ -8531,10 +8517,10 @@ function NeverLose:CreateWindow(Config)
 		end);
 
 		local hover_write = NeverLose:CreateInput(ConfigIcon,function()
-			local path = ConfigPath(ConfigLib.SelectedConfig or "Default");
+			local path = Window.ConfigFolder..'/'..(ConfigLib.SelectedConfig or "Default");
 
 			if isfile(path) then
-				writefile(ConfigPath(ConfigLib.SelectedConfig or "Default"),ConfigLib:GetData());
+				writefile(Window.ConfigFolder..'/'..(ConfigLib.SelectedConfig or "Default"),ConfigLib:GetData());
 
 				Logging.new("folder",'Saved '..tostring(ConfigLib.SelectedConfig),3.5)
 			end;
@@ -8559,7 +8545,7 @@ function NeverLose:CreateWindow(Config)
 			if cfg_name and cfg_name:byte() and not cfg_name:find('/',1,true) and not cfg_name:find('\\',1,true) then
 				cfg_name = string.sub(cfg_name , 1 , 24);
 
-				writefile(ConfigPath(cfg_name),ConfigLib:GetData());
+				writefile(Window.ConfigFolder..'/'..cfg_name,ConfigLib:GetData());
 				ConfigLib.SelectedConfig = cfg_name;
 				ConfigName.Text = cfg_name;
 
@@ -10545,6 +10531,232 @@ function NeverLose:Unload()
 end;
 
 getgenv().__NL_CURRENT_TEST = NeverLose;
+
+
+-- =========================================================
+-- Legacy Shitaro API compatibility
+-- =========================================================
+-- The Shitaro script uses the older lowercase API:
+--   lib:window -> window:tab -> tab:section -> section:toggle/slider/etc.
+-- Keep the native NeverLose API intact and expose this compatibility layer
+-- on top, so the script can use its original calls without being rewritten.
+
+do
+    local __NL_OriginalCreateWindow = NeverLose.CreateWindow
+
+    local function __NL_CompatElement(el, optionEnabled)
+        if not el then return el end
+
+        if type(el.GetValue) == "function" then
+            el.get = function(self) return self:GetValue() end
+        end
+        if type(el.SetValue) == "function" then
+            el.set = function(self, v) return self:SetValue(v) end
+        end
+
+        if optionEnabled and type(el.AddOption) == "function" then
+            local ok, opt = pcall(function()
+                return el:AddOption(1)
+            end)
+            if ok and opt then
+                el.options = opt
+            end
+        end
+
+        return el
+    end
+
+    local function __NL_CompatSection(section)
+        if not section then return section end
+        if section.__VillonLegacySection then return section end
+        section.__VillonLegacySection = true
+
+        function section:toggle(cfg)
+            cfg = cfg or {}
+            local el = self:AddLabel(cfg.name or cfg.Name or "toggle"):AddToggle({
+                Default = cfg.default == true or cfg.Default == true,
+                Flag = cfg.flag or cfg.Flag,
+                Callback = cfg.callback or cfg.Callback,
+            })
+            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+        end
+
+        function section:slider(cfg)
+            cfg = cfg or {}
+            local rounding = cfg.Round
+            if rounding == nil then rounding = cfg.Rounding end
+            local el = self:AddLabel(cfg.name or cfg.Name or "slider"):AddSlider({
+                Min = cfg.min ~= nil and cfg.min or (cfg.Min ~= nil and cfg.Min or 0),
+                Max = cfg.max ~= nil and cfg.max or (cfg.Max ~= nil and cfg.Max or 100),
+                Default = cfg.default ~= nil and cfg.default or cfg.Default,
+                Rounding = rounding ~= nil and rounding or 0,
+                Type = cfg.suffix or cfg.Type or "",
+                Flag = cfg.flag or cfg.Flag,
+                Callback = cfg.callback or cfg.Callback,
+            })
+            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+        end
+
+        function section:dropdown(cfg)
+            cfg = cfg or {}
+            local el = self:AddLabel(cfg.name or cfg.Name or "dropdown"):AddDropdown({
+                Default = cfg.default ~= nil and cfg.default or cfg.Default,
+                Values = cfg.list or cfg.Values or {},
+                Multi = cfg.multi == true or cfg.Multi == true,
+                Flag = cfg.flag or cfg.Flag,
+                Callback = cfg.callback or cfg.Callback,
+            })
+            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+        end
+
+        function section:combo(cfg)
+            return self:dropdown(cfg)
+        end
+
+        function section:color(cfg)
+            cfg = cfg or {}
+            local el = self:AddLabel(cfg.name or cfg.Name or "color"):AddColorPicker({
+                Default = cfg.default ~= nil and cfg.default or cfg.Default,
+                Flag = cfg.flag or cfg.Flag,
+                Callback = cfg.callback or cfg.Callback,
+            })
+            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+        end
+
+        function section:keybind(cfg)
+            cfg = cfg or {}
+            local el = self:AddLabel(cfg.name or cfg.Name or "keybind"):AddKeybind({
+                Default = cfg.default ~= nil and cfg.default or cfg.Default,
+                Flag = cfg.flag or cfg.Flag,
+                Callback = cfg.callback or cfg.Callback,
+            })
+            return __NL_CompatElement(el, cfg.options == true or cfg.Option == true)
+        end
+
+        function section:button(cfg)
+            cfg = cfg or {}
+            return __NL_CompatElement(self:AddButton({
+                Name = cfg.name or cfg.Name or "Button",
+                Icon = cfg.icon or cfg.Icon,
+                Callback = cfg.callback or cfg.Callback,
+            }))
+        end
+
+        function section:label(cfg, wrap)
+            if type(cfg) == "table" then
+                wrap = cfg.wrap
+                cfg = cfg.name or cfg.Name or ""
+            end
+            return __NL_CompatElement(self:AddLabel(tostring(cfg or ""), wrap == true))
+        end
+
+        return section
+    end
+
+    local function __NL_CompatTab(tab)
+        if not tab then return tab end
+        if tab.__VillonLegacyTab then return tab end
+        tab.__VillonLegacyTab = true
+
+        local __addSection = tab.AddSection
+        function tab:section(cfg)
+            return __NL_CompatSection(__addSection(self, {
+                Name = cfg and (cfg.name or cfg.Name) or "SECTION",
+                Position = cfg and (cfg.side or cfg.Position) or "left",
+            }))
+        end
+
+        if type(tab.AddClone) == "function" then
+            local __addClone = tab.AddClone
+            function tab:clone(cfg)
+                cfg = cfg or {}
+                return __addClone(self, cfg)
+            end
+        end
+
+        if type(tab.AddImageList) == "function" then
+            local __addImageList = tab.AddImageList
+            function tab:gallery(cfg)
+                cfg = cfg or {}
+                return __addImageList(self, cfg)
+            end
+        end
+
+        if type(tab.AddSub) == "function" then
+            local __addSub = tab.AddSub
+            function tab:sub(cfg)
+                cfg = cfg or {}
+                return __NL_CompatTab(__addSub(self, cfg))
+            end
+        end
+
+        function tab:color(cfg)
+            cfg = cfg or {}
+            local sec = __NL_CompatSection(self:AddSection({
+                Name = cfg.name or cfg.Name or "COLORS",
+                Position = cfg.side or cfg.Position or "left",
+            }))
+            return sec:color(cfg)
+        end
+
+        function tab:configs(cfg)
+            cfg = cfg or {}
+            -- NeverLose keeps config controls in Window.UserSettings. Return
+            -- the tab itself so callers can continue using the old API shape.
+            return self
+        end
+
+        return tab
+    end
+
+    local function __NL_CompatWindow(win)
+        if not win then return win end
+        if win.__VillonLegacyWindow then return win end
+        win.__VillonLegacyWindow = true
+
+        function win:tab(cfg)
+            cfg = cfg or {}
+            local tab = self:AddTab({
+                Icon = cfg.icon or cfg.Icon or "crosshairs",
+                Name = cfg.name or cfg.Name or "Tab",
+                Type = cfg.type or cfg.Type or "Double",
+            })
+            return __NL_CompatTab(tab)
+        end
+
+        function win:toggle()
+            return self:ToggleInterface()
+        end
+
+        function win:setbind(v)
+            self.Keybind = v
+        end
+
+        function win:SetBind(v)
+            self.Keybind = v
+        end
+
+        return win
+    end
+
+    NeverLose.window = function(self, cfg)
+        cfg = cfg or {}
+        local converted = {}
+        for k, v in pairs(cfg) do converted[k] = v end
+        if converted.bind ~= nil and converted.Keybind == nil then
+            converted.Keybind = converted.bind
+        end
+        if converted.keybind ~= nil and converted.Keybind == nil then
+            converted.Keybind = converted.keybind
+        end
+        if converted.configfolder == nil and converted.ConfigFolder == nil then
+            converted.ConfigFolder = "VillonCfg"
+        end
+        return __NL_CompatWindow(__NL_OriginalCreateWindow(self, converted))
+    end
+
+    NeverLose._legacyCompat = true
+end
 
 -- Alias: some scripts (this one included) call lib:window(...) / lib.window
 -- instead of the library's real method name, CreateWindow. Rather than edit
