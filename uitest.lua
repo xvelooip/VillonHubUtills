@@ -785,7 +785,7 @@ local Library do
         end)
 
         if not OkDecoded or type(Decoded) ~= "table" then
-            warn("[alt.gg] LoadConfig: файл конфига битый")
+            warn("[Villon] LoadConfig: файл конфига битый")
             return false
         end
 
@@ -4588,8 +4588,8 @@ local ICON_BOT = "rbxassetid://80451686744860"
 local holderGui = Library.Holder.Instance
 
 local Window = Library:Window({
-    Name = "alt.gg",
-    SubName = "это пиздец"
+    Name = "VillonHub",
+    SubName = "Очень Круто"
     Logo = LOGO,
 })
 
